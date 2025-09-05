@@ -1,0 +1,2 @@
+ALTER TABLE votes
+ADD COLUMN IF NOT EXISTS voter_fingerprint TEXT;

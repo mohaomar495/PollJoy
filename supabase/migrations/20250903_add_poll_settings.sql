@@ -1,0 +1,3 @@
+ALTER TABLE polls
+ADD COLUMN require_login_to_vote BOOLEAN DEFAULT FALSE,
+ADD COLUMN ends_at TIMESTAMPTZ;
