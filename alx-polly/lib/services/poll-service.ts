@@ -8,6 +8,7 @@ export type Vote = Database["public"]["Tables"]["votes"]["Row"];
 export type PollWithOptions = Poll & {
   options: PollOption[];
   votes_count: number;
+  username?: string | null;
 };
 
 export type PollWithOptionsAndVotes = PollWithOptions & {
@@ -52,7 +53,7 @@ export const pollService = {
   async getPollById(id: string): Promise<PollWithOptionsAndVotes | null> {
     // Get the poll
     const { data: poll, error: pollError } = await supabase
-      .from("polls")
+      .from("polls_with_username")
       .select("*")
       .eq("id", id)
       .single();
@@ -94,7 +95,7 @@ export const pollService = {
   async getUserPolls(userId: string): Promise<PollWithOptions[]> {
     // Get all polls for the user
     const { data: polls, error: pollsError } = await supabase
-      .from("polls")
+      .from("polls_with_username")
       .select("*")
       .eq("user_id", userId)
       .order("created_at", { ascending: false });
@@ -150,7 +151,7 @@ export const pollService = {
   async getPublicPolls(): Promise<PollWithOptions[]> {
     // Get all public polls
     const { data: polls, error: pollsError } = await supabase
-      .from("polls")
+      .from("polls_with_username")
       .select("*")
       .eq("is_public", true)
       .order("created_at", { ascending: false });
@@ -215,12 +216,25 @@ export const pollService = {
     return data;
   },
 
-  async hasVoted(pollId: string, fingerprint: string): Promise<boolean> {
-    const { count, error } = await supabase
+  async hasVoted(
+    pollId: string,
+    userId?: string,
+    fingerprint?: string,
+  ): Promise<boolean> {
+    const query = supabase
       .from("votes")
       .select("*", { count: "exact", head: true })
-      .eq("poll_id", pollId)
-      .eq("voter_fingerprint", fingerprint);
+      .eq("poll_id", pollId);
+
+    if (userId) {
+      query.eq("user_id", userId);
+    } else if (fingerprint) {
+      query.eq("voter_fingerprint", fingerprint);
+    } else {
+      return false; // Cannot check if no identifier is provided
+    }
+
+    const { count, error } = await query;
 
     if (error) throw error;
 
@@ -290,77 +304,63 @@ export const pollService = {
       throw pollError;
     }
 
-    // Start a transaction
-    const { error: transactionError } = await supabase.rpc("begin_transaction");
-    if (transactionError) throw transactionError;
+    // Update the poll
+    const { data, error } = await supabase
+      .from("polls")
+      .update(updates)
+      .eq("id", id)
+      .select()
+      .single();
 
-    try {
-      // Update the poll
-      const { data, error } = await supabase
-        .from("polls")
-        .update(updates)
-        .eq("id", id)
-        .select()
-        .single();
+    if (error) throw error;
 
-      if (error) throw error;
+    // Get existing options
+    const { data: existingOptions, error: optionsError } = await supabase
+      .from("poll_options")
+      .select("*")
+      .eq("poll_id", id);
 
-      // Get existing options
-      const { data: existingOptions, error: optionsError } = await supabase
-        .from("poll_options")
-        .select("*")
-        .eq("poll_id", id);
+    if (optionsError) throw optionsError;
 
-      if (optionsError) throw optionsError;
+    // Create a map of existing options by ID
+    const existingOptionsMap = new Map(
+      existingOptions.map((opt) => [opt.id, opt]),
+    );
 
-      // Create a map of existing options by ID
-      const existingOptionsMap = new Map(
-        existingOptions.map((opt) => [opt.id, opt]),
-      );
-
-      // Process options: update existing, add new ones
-      for (const option of options) {
-        if (option.id && existingOptionsMap.has(option.id)) {
-          // Update existing option
-          const { error: updateError } = await supabase
-            .from("poll_options")
-            .update({ text: option.text })
-            .eq("id", option.id);
-
-          if (updateError) throw updateError;
-
-          // Remove from map to track which ones to delete
-          existingOptionsMap.delete(option.id);
-        } else {
-          // Add new option
-          const { error: insertError } = await supabase
-            .from("poll_options")
-            .insert({ poll_id: id, text: option.text });
-
-          if (insertError) throw insertError;
-        }
-      }
-
-      // Delete options that were removed
-      const optionsToDelete = Array.from(existingOptionsMap.keys());
-      if (optionsToDelete.length > 0) {
-        const { error: deleteError } = await supabase
+    // Process options: update existing, add new ones
+    for (const option of options) {
+      if (option.id && existingOptionsMap.has(option.id)) {
+        // Update existing option
+        const { error: updateError } = await supabase
           .from("poll_options")
-          .delete()
-          .in("id", optionsToDelete);
+          .update({ text: option.text })
+          .eq("id", option.id);
 
-        if (deleteError) throw deleteError;
+        if (updateError) throw updateError;
+
+        // Remove from map to track which ones to delete
+        existingOptionsMap.delete(option.id);
+      } else {
+        // Add new option
+        const { error: insertError } = await supabase
+          .from("poll_options")
+          .insert({ poll_id: id, text: option.text });
+
+        if (insertError) throw insertError;
       }
-
-      // Commit transaction
-      const { error: commitError } = await supabase.rpc("commit_transaction");
-      if (commitError) throw commitError;
-
-      return { success: true, data };
-    } catch (error) {
-      // Rollback transaction on error
-      await supabase.rpc("rollback_transaction");
-      throw error;
     }
+
+    // Delete options that were removed
+    const optionsToDelete = Array.from(existingOptionsMap.keys());
+    if (optionsToDelete.length > 0) {
+      const { error: deleteError } = await supabase
+        .from("poll_options")
+        .delete()
+        .in("id", optionsToDelete);
+
+      if (deleteError) throw deleteError;
+    }
+
+    return { success: true, data };
   },
 };

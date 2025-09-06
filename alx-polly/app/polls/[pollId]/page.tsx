@@ -13,10 +13,25 @@ import {
 } from "@/components/ui/card";
 import Link from "next/link";
 import { useAuth } from "@/contexts/auth-context";
-import { pollService } from "@/lib/services/poll-service";
+import {
+  pollService,
+  PollWithOptionsAndVotes,
+} from "@/lib/services/poll-service";
 import { toast } from "@/components/ui/use-toast";
 import { Toaster } from "@/components/ui/toaster";
 import { QRCodeSVG } from "qrcode.react";
+import { PollStats } from "@/components/poll-stats";
+import { PollVote } from "@/components/poll-vote";
+
+const getVoterFingerprint = (): string => {
+  const fingerprint = localStorage.getItem("voter_fingerprint");
+  if (fingerprint) {
+    return fingerprint;
+  }
+  const newFingerprint = crypto.randomUUID();
+  localStorage.setItem("voter_fingerprint", newFingerprint);
+  return newFingerprint;
+};
 
 export default function PollPage({
   params,
@@ -27,12 +42,12 @@ export default function PollPage({
   const router = useRouter();
   const { pollId } = use(params);
 
-  const [poll, setPoll] = useState<any>(null);
-  const [selectedOptions, setSelectedOptions] = useState<string[]>([]);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [poll, setPoll] = useState<PollWithOptionsAndVotes | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showQR, setShowQR] = useState(false);
+  const [hasVoted, setHasVoted] = useState(false);
+  const [voterFingerprint, setVoterFingerprint] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchPoll = async () => {
@@ -54,56 +69,35 @@ export default function PollPage({
     fetchPoll();
   }, [pollId]);
 
-  const handleVote = async () => {
-    if (!user && poll.require_login_to_vote) {
-      toast({
-        title: "Error",
-        description: "You must be logged in to vote.",
-        variant: "destructive",
-      });
-      return;
-    }
+  useEffect(() => {
+    if (!poll) return;
 
-    if (selectedOptions.length === 0) {
-      toast({
-        title: "Error",
-        description: "Please select at least one option to vote.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setIsSubmitting(true);
-    try {
-      for (const optionId of selectedOptions) {
-        await pollService.vote({
-          poll_id: pollId,
-          option_id: optionId,
-          user_id: user?.id,
-        });
+    const checkVotedStatus = async () => {
+      let fingerprint: string | null = null;
+      if (!user) {
+        fingerprint = getVoterFingerprint();
+        setVoterFingerprint(fingerprint);
       }
-      toast({ title: "Success", description: "Your vote has been cast!" });
-      // Optionally, you can refetch the poll data to show updated results
-    } catch (err) {
-      console.error("Error casting vote:", err);
-      toast({
-        title: "Error",
-        description: "Failed to cast your vote. Please try again.",
-        variant: "destructive",
-      });
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
+
+      const voted = await pollService.hasVoted(
+        poll.id,
+        user?.id,
+        fingerprint || undefined,
+      );
+      setHasVoted(voted);
+    };
+
+    checkVotedStatus();
+  }, [poll, user]);
 
   const handleDelete = async () => {
-    if (!user || user.id !== poll.user_id) return;
+    if (!user || !poll || user.id !== poll.user_id) return;
 
     if (confirm("Are you sure you want to delete this poll?")) {
       try {
         await pollService.deletePoll(pollId);
         toast({ title: "Success", description: "Poll deleted successfully" });
-        router.push("/polls");
+        router.push("/my-polls");
       } catch (err) {
         console.error("Error deleting poll:", err);
         toast({
@@ -142,6 +136,12 @@ export default function PollPage({
     );
   }
 
+  if (!poll) {
+    return null; // Should not happen if error is handled, but good practice
+  }
+
+  const isOwner = user?.id === poll.user_id;
+
   return (
     <div className="container mx-auto py-8">
       <Toaster />
@@ -152,8 +152,11 @@ export default function PollPage({
               <CardTitle className="text-2xl">{poll.title}</CardTitle>
               <CardDescription>{poll.description}</CardDescription>
             </div>
-            {user && user.id === poll.user_id && (
+            {isOwner && (
               <div className="flex gap-2">
+                <Button onClick={() => setShowQR(true)} variant="outline">
+                  Share
+                </Button>
                 <Link href={`/polls/${pollId}/edit`}>
                   <Button variant="outline">Edit</Button>
                 </Link>
@@ -164,57 +167,42 @@ export default function PollPage({
             )}
           </div>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            {poll.options.map((option: any) => (
-              <div
-                key={option.id}
-                className={`p-4 border rounded-md cursor-pointer ${
-                  selectedOptions.includes(option.id) ? "border-primary" : ""
-                }`}
-                onClick={() => {
-                  if (selectedOptions.includes(option.id)) {
-                    setSelectedOptions(
-                      selectedOptions.filter((id) => id !== option.id),
-                    );
-                  } else {
-                    setSelectedOptions([...selectedOptions, option.id]);
-                  }
-                }}
-              >
-                {option.text}
-              </div>
-            ))}
-          </div>
+        <CardContent>
+          {isOwner ? (
+            <PollStats poll={poll} />
+          ) : (
+            <PollVote
+              user={user}
+              poll={poll}
+              hasVoted={hasVoted}
+              voterFingerprint={voterFingerprint}
+            />
+          )}
         </CardContent>
-        <CardFooter className="flex justify-between">
+        <CardFooter>
           <Link href="/polls">
             <Button variant="outline">Back to Polls</Button>
           </Link>
-          <div className="flex gap-2">
-            {user && user.id === poll.user_id && (
-              <Button
-                onClick={() => setShowQR(true)}
-                variant="outline"
-                size="lg"
-              >
-                Share
-              </Button>
-            )}
-            <Button onClick={handleVote} disabled={isSubmitting}>
-              {isSubmitting ? "Voting..." : "Vote"}
-            </Button>
-          </div>
         </CardFooter>
       </Card>
       {showQR && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
-          <div className="bg-white p-8 rounded-lg">
-            <h2 className="text-2xl font-bold mb-4">Share Poll</h2>
-            <QRCodeSVG value={window.location.href} />
-            <Button onClick={() => setShowQR(false)} className="mt-4">
-              Close
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-background p-8 rounded-lg shadow-lg relative">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setShowQR(false)}
+              className="absolute top-2 right-2"
+            >
+              &times;
             </Button>
+            <h2 className="text-2xl font-bold mb-4 text-center">Share Poll</h2>
+            <div className="p-4 bg-white rounded-md">
+              <QRCodeSVG value={window.location.href} size={256} />
+            </div>
+            <p className="text-center text-muted-foreground mt-4 break-all">
+              {window.location.href}
+            </p>
           </div>
         </div>
       )}

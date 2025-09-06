@@ -103,6 +103,8 @@ export default function PollsPage() {
               optionsCount={poll.options.length}
               votesCount={poll.votes_count}
               createdAt={new Date(poll.created_at).toLocaleDateString()}
+              createdBy={poll.username}
+              endsAt={poll.ends_at}
             />
           ))}
         </div>
