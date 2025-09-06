@@ -63,9 +63,9 @@ export default function EditPollPage({
 
         setTitle(pollData.title);
         setDescription(pollData.description || "");
-        setIsPublic(pollData.is_public);
-        setAllowMultipleVotes(pollData.allow_multiple_votes);
-        setRequireLogin(pollData.require_login_to_vote);
+        setIsPublic(pollData.is_public ?? true);
+        setAllowMultipleVotes(pollData.allow_multiple_votes ?? false);
+        setRequireLogin(pollData.require_login_to_vote ?? false);
         setEndDate(pollData.ends_at ? new Date(pollData.ends_at) : null);
         setOptions(
           pollData.options.map((opt) => ({ id: opt.id, text: opt.text })),
@@ -126,7 +126,7 @@ export default function EditPollPage({
           is_public: isPublic,
           allow_multiple_votes: allowMultipleVotes,
           require_login_to_vote: requireLogin,
-          ends_at: endDate,
+          ends_at: endDate ? endDate.toISOString() : null,
         },
         validOptions,
       );

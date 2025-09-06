@@ -102,8 +102,12 @@ export default function PollsPage() {
               description={poll.description || ""}
               optionsCount={poll.options.length}
               votesCount={poll.votes_count}
-              createdAt={new Date(poll.created_at).toLocaleDateString()}
-              createdBy={poll.username}
+              createdAt={
+                poll.created_at
+                  ? new Date(poll.created_at).toLocaleDateString()
+                  : ""
+              }
+              createdBy={poll.username ?? undefined}
               endsAt={poll.ends_at}
             />
           ))}

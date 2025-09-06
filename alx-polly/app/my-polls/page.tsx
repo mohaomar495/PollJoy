@@ -15,13 +15,14 @@ export default function MyPollsPage() {
 
   useEffect(() => {
     const fetchPolls = async () => {
+      if (!user) return;
       try {
         const userPolls = await pollService.getUserPolls(user.id);
         setPolls(userPolls);
       } catch (err) {
         console.error(
           "Error fetching polls:",
-          err instanceof Error ? err.message : JSON.stringify(err)
+          err instanceof Error ? err.message : JSON.stringify(err),
         );
         setError("Failed to load polls. Please try again.");
       } finally {
@@ -29,9 +30,7 @@ export default function MyPollsPage() {
       }
     };
 
-    if (user) {
-      fetchPolls();
-    }
+    fetchPolls();
   }, [user]);
 
   return (
@@ -79,7 +78,11 @@ export default function MyPollsPage() {
               description={poll.description || ""}
               optionsCount={poll.options.length}
               votesCount={poll.votes_count}
-              createdAt={new Date(poll.created_at).toLocaleDateString()}
+              createdAt={
+                poll.created_at
+                  ? new Date(poll.created_at).toLocaleDateString()
+                  : ""
+              }
             />
           ))}
         </div>

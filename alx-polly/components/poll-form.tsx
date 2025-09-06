@@ -47,7 +47,7 @@ export function PollForm({
   const [description, setDescription] = useState(initialData.description);
   const [options, setOptions] = useState<string[]>(initialData.options);
   const [endsAt, setEndsAt] = useState<Date | undefined>(initialData.endsAt);
-  const [isPublic, setIsPublic] = useState(initialData.isPublic);
+  const [isPublic, setIsPublic] = useState(initialData.isPublic ?? true);
 
   const addOption = () => {
     setOptions([...options, `Option ${options.length + 1}`]);
