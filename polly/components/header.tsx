@@ -20,7 +20,7 @@ export function Header() {
       <div className="container mx-auto flex h-16 items-center justify-between">
         <div className="flex items-center gap-8">
           <Link href="/" className="text-xl font-bold">
-            ALX Polly
+            Poll Joy
           </Link>
           <nav className="flex items-center gap-4">
             <Link
